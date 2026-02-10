@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { importRows, getDashboard, listSnapshots, loadSnapshot, saveSnapshot } from '../lib/api'
+import { importRows, getDashboard, getRows, listSnapshots, loadSnapshot, saveSnapshot } from '../lib/api'
 import { parseRelatorio } from '../lib/excel'
 import type { AnalystRow, DashboardFilters } from '../lib/types'
 
@@ -31,16 +31,37 @@ export default function App() {
   const [snaps, setSnaps] = useState<any[]>([])
   const [selectedSnap, setSelectedSnap] = useState<string>('')
 
+  const [rowsData, setRowsData] = useState<any[]>([])
+  const [rowsTotal, setRowsTotal] = useState<number>(0)
+  const [rowsOffset, setRowsOffset] = useState<number>(0)
+  const rowsLimit = 50
+
   async function refresh() {
     setBusy(true); setMsg(null)
     try {
       const d = await getDashboard(filters)
       setDash(d)
+      setRowsOffset(0)
+      const r = await getRows(filters, rowsLimit, 0)
+      setRowsData(r.items || [])
+      setRowsTotal(r.total || 0)
     } catch (e: any) {
       setMsg(e?.message || String(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  async function refreshRows(offset: number) {
+    setBusy(true); setMsg(null)
+    try {
+      const r = await getRows(filters, rowsLimit, offset)
+      setRowsData(r.items || [])
+      setRowsTotal(r.total || 0)
+      setRowsOffset(offset)
+    } catch (e:any) {
+      setMsg(e?.message || String(e))
+    } finally { setBusy(false) }
   }
 
   async function refreshSnaps() {
@@ -57,10 +78,10 @@ export default function App() {
   const cards = useMemo(() => {
     if (!dash) return null
     return [
-      { title: 'Qualidade média', value: formatPct(dash.kpis.avgQuality ?? 0) },
-      { title: 'Total de análises', value: String(dash.kpis.totalAnalyses ?? 0) },
-      { title: 'Aptos HO', value: String(dash.kpis.hoOk ?? 0) },
-      { title: 'Presencial', value: String(dash.kpis.hoPresencial ?? 0) },
+      { title: 'Qualidade média', value: formatPct(dash.kpis.avgQuality ?? 0), cls: 'card blue' },
+      { title: 'Total de análises', value: String(dash.kpis.totalAnalyses ?? 0), cls: 'card purple' },
+      { title: 'Aptos HO', value: String(dash.kpis.hoOk ?? 0), cls: 'card green' },
+      { title: 'Presencial', value: String(dash.kpis.hoPresencial ?? 0), cls: 'card red' },
     ]
   }, [dash])
 
@@ -80,8 +101,8 @@ export default function App() {
               try {
                 const rows = await parseRelatorio(f)
                 const label = `Import ${new Date().toISOString().slice(0,10)}`
-                await importRows({ importLabel: label, rows })
-                setMsg(`Importação concluída: ${rows.length} linhas`)
+                const res = await importRows({ importLabel: label, rows })
+                setMsg(`Importação concluída: ${res.inserted} linhas (de ${rows.length} lidas)`)
                 await refresh()
               } catch (err: any) {
                 setMsg(err?.message || String(err))
@@ -92,14 +113,14 @@ export default function App() {
             }}
           />
           <button className="primary" disabled={busy} onClick={refresh}>Atualizar</button>
-          <span className="small">Dica: depois do upload, use os filtros e salve um snapshot.</span>
+          <span className="small">Upload não é salvo. O sistema grava só os dados (histórico).</span>
         </div>
 
         <div className="grid cards" style={{ marginTop: 12 }}>
           {cards?.map((c) => (
-            <div className="card" key={c.title}>
+            <div className={c.cls} key={c.title}>
               <div className="small">{c.title}</div>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{c.value}</div>
+              <div style={{ fontSize: 24, fontWeight: 800 }}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -130,18 +151,18 @@ export default function App() {
             disabled={!dash}
             onClick={() => {
               const rows = (dash?.analysts || []) as AnalystRow[]
-              const header = 'analista,total,qualidade,erros,rank,ho\n'
+              const header = 'pos,analista,propostas,qualidade,erros,status_ho\n'
               const csv = header + rows.map(r => [
+                r.prodRank,
                 JSON.stringify(r.operador),
                 r.total,
                 (r.avgQuality*100).toFixed(2),
                 r.errors,
-                r.prodRank,
                 r.hoStatus
               ].join(',')).join('\n')
-              downloadText(`analistas.csv`, csv, 'text/csv')
+              downloadText(`ranking_analistas.csv`, csv, 'text/csv')
             }}
-          >Exportar CSV</button>
+          >Exportar ranking CSV</button>
 
           <button
             disabled={!dash}
@@ -168,6 +189,10 @@ export default function App() {
               const s = await loadSnapshot(id)
               setFilters(s.filters || {})
               setDash(s.dashboard || null)
+              setRowsOffset(0)
+              const r = await getRows(s.filters || {}, rowsLimit, 0)
+              setRowsData(r.items || [])
+              setRowsTotal(r.total || 0)
             } catch (err:any) {
               setMsg(err?.message || String(err))
             } finally { setBusy(false) }
@@ -178,9 +203,9 @@ export default function App() {
         </div>
       </div>
 
-      <div className="card">
-        <h2>Analistas</h2>
-        <div className="small">Ranking de produção é pelo total de análises no período filtrado.</div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h2>Ranking de analistas</h2>
+        <div className="small">Produção = total de análises no período filtrado.</div>
         <div style={{ marginTop: 10, overflowX: 'auto' }}>
           <table className="table">
             <thead>
@@ -212,6 +237,65 @@ export default function App() {
         </div>
       </div>
 
+      <div className="card">
+        <h2>Propostas analisadas</h2>
+        <div className="small">Mostrando {rowsOffset + 1}–{Math.min(rowsOffset + rowsLimit, rowsTotal)} de {rowsTotal}.</div>
+
+        <div className="row" style={{ marginTop: 10 }}>
+          <button disabled={busy || rowsOffset === 0} onClick={() => refreshRows(Math.max(0, rowsOffset - rowsLimit))}>◀ Anterior</button>
+          <button disabled={busy || rowsOffset + rowsLimit >= rowsTotal} onClick={() => refreshRows(rowsOffset + rowsLimit)}>Próxima ▶</button>
+
+          <button
+            disabled={!rowsTotal}
+            onClick={() => {
+              const header = 'data,operador,status,adesao,manifesto,severidade,pontos\n'
+              const csv = header + rowsData.map(r => [
+                JSON.stringify(r.data || ''),
+                JSON.stringify(r.operador || ''),
+                JSON.stringify(r.status || ''),
+                JSON.stringify(r.adesao || ''),
+                JSON.stringify(r.manifesto || ''),
+                JSON.stringify(r.severidade || ''),
+                r.pontos
+              ].join(',')).join('\n')
+              downloadText('propostas_pagina.csv', csv, 'text/csv')
+            }}
+          >Exportar página CSV</button>
+        </div>
+
+        <div style={{ marginTop: 10, overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Data/Hora</th>
+                <th>Operador</th>
+                <th>Status</th>
+                <th>Adesão</th>
+                <th>Manifesto</th>
+                <th>Severidade</th>
+                <th>Pontos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rowsData.map((r, idx) => (
+                <tr key={r.id || idx}>
+                  <td>{r.data ? new Date(r.data).toLocaleString('pt-BR') : ''}</td>
+                  <td>{r.operador || ''}</td>
+                  <td>{r.status || ''}</td>
+                  <td>{r.adesao || ''}</td>
+                  <td style={{ maxWidth: 420 }}>{r.manifesto || ''}</td>
+                  <td>{r.severidade || ''}</td>
+                  <td>{r.pontos}</td>
+                </tr>
+              ))}
+              {!rowsData.length && (
+                <tr><td colSpan={7} className="small">Sem linhas para mostrar.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {msg && (
         <div className="card" style={{ marginTop: 12 }}>
           <div className="small">Mensagem</div>
@@ -220,7 +304,7 @@ export default function App() {
       )}
 
       <div className="small" style={{ marginTop: 12, opacity: .7 }}>
-        Upload não é salvo. O sistema grava apenas dados normalizados e snapshots no D1.
+        Dica: se sua planilha tiver muita linha, o upload é enviado em blocos para não travar.
       </div>
     </div>
   )

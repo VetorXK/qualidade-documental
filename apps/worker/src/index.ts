@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { NormalizedRow, Filters } from './types'
-import { pointsFor, isError } from './scoring'
+import { pointsFor } from './scoring'
 import { buildWhere } from './db'
 import { hoStatus } from './ho'
 
@@ -42,31 +42,28 @@ app.post('/api/import', async (c) => {
   if (!body?.rows?.length) return c.text('Sem linhas para importar', 400)
   const importLabel = body.importLabel || `Import ${importedAt}`
 
-  // Insert in chunks
-  const chunkSize = 300
-  for (let i = 0; i < body.rows.length; i += chunkSize) {
-    const chunk = body.rows.slice(i, i + chunkSize)
-    const stmts = chunk.map((r) => {
-      const status = norm(r.status)
-      const sev = norm(r.severidade)
-      const pts = pointsFor(status, sev)
-      return c.env.DB.prepare(`
-        INSERT INTO qa_rows (id, imported_at, import_label, data, adesao, operador, grupo, status, manifesto, severidade, pontos)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        uid(), importedAt, importLabel,
-        norm(r.data),
-        norm(r.adesao),
-        norm(r.operador),
-        norm(r.group),
-        status,
-        norm(r.manifesto),
-        sev,
-        pts
-      )
-    })
-    await c.env.DB.batch(stmts)
-  }
+  // Batch insert for speed (critical for 2k+ lines)
+  const stmts = body.rows.map((r) => {
+    const status = norm(r.status)
+    const sev = norm(r.severidade)
+    const pts = pointsFor(status, sev)
+    return c.env.DB.prepare(`
+      INSERT INTO qa_rows (id, imported_at, import_label, data, adesao, operador, grupo, status, manifesto, severidade, pontos)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      uid(), importedAt, importLabel,
+      norm(r.data),
+      norm(r.adesao),
+      norm(r.operador),
+      norm(r.group),
+      status,
+      norm(r.manifesto),
+      sev,
+      pts
+    )
+  })
+
+  await c.env.DB.batch(stmts)
 
   return c.json({ ok: true, importedAt, importLabel, inserted: body.rows.length })
 })
@@ -86,7 +83,6 @@ app.get('/api/dashboard', async (c) => {
 
   const { clause, args } = buildWhere(filters)
 
-  // KPIs
   const kpi = await c.env.DB.prepare(`
     SELECT
       COUNT(*) as total,
@@ -98,7 +94,6 @@ app.get('/api/dashboard', async (c) => {
   const total = Number(kpi?.total || 0)
   const avgQuality = Number(kpi?.avg_quality || 0)
 
-  // Analysts aggregation
   const rows = await c.env.DB.prepare(`
     SELECT
       COALESCE(operador, '(Sem operador)') as operador,
@@ -139,18 +134,50 @@ app.get('/api/dashboard', async (c) => {
   })
 })
 
+app.get('/api/rows', async (c) => {
+  const q = c.req.query()
+  const filters: Filters = {
+    dateFrom: q.dateFrom,
+    dateTo: q.dateTo,
+    adesao: q.adesao,
+    operador: q.operador,
+    group: q.group,
+    severidade: q.severidade,
+    minPoints: q.minPoints,
+    maxPoints: q.maxPoints
+  }
+  const limit = Math.min(Number(q.limit || 50), 200)
+  const offset = Math.max(Number(q.offset || 0), 0)
+
+  const { clause, args } = buildWhere(filters)
+
+  const totalRow = await c.env.DB.prepare(`
+    SELECT COUNT(*) as total
+    FROM qa_rows
+    ${clause}
+  `).bind(...args).first<any>()
+
+  const res = await c.env.DB.prepare(`
+    SELECT id, data, operador, status, adesao, manifesto, severidade, pontos
+    FROM qa_rows
+    ${clause}
+    ORDER BY datetime(imported_at) DESC, rowid DESC
+    LIMIT ? OFFSET ?
+  `).bind(...args, limit, offset).all<any>()
+
+  return c.json({ total: Number(totalRow?.total || 0), limit, offset, items: res.results || [] })
+})
+
 app.post('/api/snapshots', async (c) => {
   const body = await c.req.json<{ name: string, filters: Filters }>()
   const name = (body?.name || '').trim()
   if (!name) return c.text('Nome do snapshot é obrigatório', 400)
 
-  // materializa dashboard com os filtros atuais
   const url = new URL(c.req.url)
   for (const [k, v] of Object.entries(body.filters || {})) {
     if (v) url.searchParams.set(k, String(v))
   }
 
-  // Reutiliza a própria rota /api/dashboard
   const dashRes = await app.request(url.origin + '/api/dashboard?' + url.searchParams.toString(), {
     method: 'GET',
     headers: c.req.raw.headers

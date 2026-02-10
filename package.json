@@ -1,4 +1,8 @@
 {
-  "name": "qualidade-documental",
-  "private": true
+  "name": "qualidade-documental-cloudflare",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/worker"
+  ]
 }
