@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Qualidade Documental - Vitor Martins</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card-gradient { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+    <nav class="bg-slate-900 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-tight">SETOR DOCUMENTAL <span class="text-blue-400">| Qualidade</span></h1>
+            <div class="text-sm opacity-75">Responsável: Vitor Martins</div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6">
+        
+        <div class="bg-white p-6 rounded-xl shadow-sm mb-8 border border-gray-200">
+            <h2 class="text-gray-700 font-semibold mb-4 flex items-center">
+                <span class="mr-2">📂</span> Importar Planilha de Qualidade (.xlsx)
+            </h2>
+            <input type="file" id="fileInput" accept=".xlsx, .xls" 
+                class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"/>
+        </div>
+
+        <div id="dashboard" class="hidden">
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div class="card-gradient p-5 rounded-2xl text-white shadow-md">
+                    <p class="text-sm opacity-80">Total Analisado</p>
+                    <h3 id="totalAnalisado" class="text-3xl font-bold">0</h3>
+                </div>
+                <div class="bg-green-600 p-5 rounded-2xl text-white shadow-md">
+                    <p class="text-sm opacity-80">Aderência Média</p>
+                    <h3 id="mediaQualidade" class="text-3xl font-bold">0%</h3>
+                </div>
+                <div class="bg-red-500 p-5 rounded-2xl text-white shadow-md">
+                    <p class="text-sm opacity-80">Erros Críticos</p>
+                    <h3 id="totalErrosCriticos" class="text-3xl font-bold">0</h3>
+                </div>
+                <div class="bg-blue-600 p-5 rounded-2xl text-white shadow-md">
+                    <p class="text-sm opacity-80">Elegíveis Home Office</p>
+                    <h3 id="elegiveisHO" class="text-3xl font-bold">0</h3>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
+                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Ranking de Qualidade</h3>
+                    <div id="listaAnalistas" class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                        </div>
+                </div>
+
+                <div class="lg:col-span-2 space-y-6">
+                    <div id="detalheAnalista" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 min-h-[300px]">
+                        <h3 class="text-xl font-bold text-slate-800 mb-6">Selecione um analista para ver detalhes</h3>
+                        <div id="cardsContainers" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFile);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const data = evt.target.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: "A" });
+                processarDados(rows);
+            };
+            reader.readAsBinaryString(file);
+        }
+
+        function processarDados(rows) {
+            // Remove cabeçalho se necessário (ajuste conforme sua planilha)
+            const dados = rows.slice(1); 
+            const analistas = {};
+
+            let totalCriticos = 0;
+
+            dados.forEach(row => {
+                const nomeAnalista = row.I; // Coluna I: Operador 2
+                const status = row.D;       // Coluna D: Status
+                const severidade = row.V;   // Coluna V: Severidade
+                const motivo = row.K;       // Coluna K: Manifesto
+
+                if(!nomeAnalista) return;
+
+                if(!analistas[nomeAnalista]) {
+                    analistas[nomeAnalista] = { total: 0, acertos: 0, erros: 0, criticos: 0, detalhes: [] };
+                }
+
+                analistas[nomeAnalista].total++;
+                if(status === "confere") {
+                    analistas[nomeAnalista].acertos++;
+                } else {
+                    analistas[nomeAnalista].erros++;
+                    analistas[nomeAnalista].detalhes.push({ motivo, severidade });
+                    if(severidade && severidade.toLowerCase().includes('alto')) {
+                        analistas[nomeAnalista].criticos++;
+                        totalCriticos++;
+                    }
+                }
+            });
+
+            renderizarDashboard(analistas, totalCriticos);
+        }
+
+        function renderizarDashboard(analistas, totalCriticos) {
+            document.getElementById('dashboard').classList.remove('hidden');
+            const lista = document.getElementById('listaAnalistas');
+            lista.innerHTML = '';
+
+            let somaQualidade = 0;
+            let countAnalistas = 0;
+            let elegiveis = 0;
+
+            // Ordenar analistas por performance
+            const sorted = Object.entries(analistas).sort((a, b) => (b[1].acertos/b[1].total) - (a[1].acertos/a[1].total));
+
+            sorted.forEach(([nome, info], index) => {
+                const perc = ((info.acertos / info.total) * 100).toFixed(1);
+                somaQualidade += parseFloat(perc);
+                countAnalistas++;
+                
+                // Regra Home Office: 90% qualidade + Top 20 (aqui simplificado por posição no array)
+                const isElegivel = perc >= 90 && (index + 1) <= 20;
+                if(isElegivel) elegiveis++;
+
+                const item = document.createElement('div');
+                item.className = `p-3 rounded-lg border cursor-pointer transition hover:bg-gray-50 ${perc < 90 ? 'border-red-200 bg-red-50' : 'border-gray-200'}`;
+                item.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium text-sm">${nome}</span>
+                        <span class="font-bold ${perc < 90 ? 'text-red-600' : 'text-green-600'}">${perc}%</span>
+                    </div>
+                    <div class="text-[10px] uppercase text-gray-500 mt-1">Posição: ${index + 1}º | Erros: ${info.erros}</div>
+                `;
+                item.onclick = () => mostrarDetalhes(nome, info);
+                lista.appendChild(item);
+            });
+
+            document.getElementById('totalAnalisado').innerText = Object.values(analistas).reduce((a, b) => a + b.total, 0);
+            document.getElementById('mediaQualidade').innerText = (somaQualidade / countAnalistas).toFixed(1) + '%';
+            document.getElementById('totalErrosCriticos').innerText = totalCriticos;
+            document.getElementById('elegiveisHO').innerText = elegiveis;
+        }
+
+        function mostrarDetalhes(nome, info) {
+            const container = document.getElementById('detalheAnalista');
+            container.innerHTML = `
+                <div class="mb-6">
+                    <h3 class="text-2xl font-bold text-slate-800">${nome}</h3>
+                    <p class="text-gray-500">Resumo de apontamentos técnicos</p>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Acertos</p><p class="font-bold text-lg text-green-600">${info.acertos}</p></div>
+                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Erros</p><p class="font-bold text-lg text-red-600">${info.erros}</p></div>
+                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Aproveitamento</p><p class="font-bold text-lg">${((info.acertos/info.total)*100).toFixed(1)}%</p></div>
+                </div>
+                <div class="space-y-3">
+                    <h4 class="font-semibold text-sm text-gray-700">Histórico de Erros:</h4>
+                    ${info.detalhes.map(d => `
+                        <div class="p-3 bg-red-50 border-l-4 border-red-500 rounded text-sm">
+                            <div class="font-bold text-red-700 uppercase text-[10px]">${d.severidade || 'Não Definida'}</div>
+                            <div class="text-gray-700">${d.motivo}</div>
+                        </div>
+                    `).join('') || '<p class="text-gray-400 italic">Nenhum erro registrado.</p>'}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
