@@ -1,0 +1,13 @@
+name = "qualidade-documental-worker"
+main = "src/index.ts"
+compatibility_date = "2026-02-10"
+
+[vars]
+# Em produção, coloque o domínio do Pages aqui (para CORS), ex:
+# ALLOWED_ORIGINS = "https://seu-projeto.pages.dev"
+ALLOWED_ORIGINS = "*"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qualidade_documental"
+database_id = "COLE_AQUI_O_DATABASE_ID"
