@@ -2,186 +2,171 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Qualidade Documental - Vitor Martins</title>
+    <title>Documental Intelligence | Shared Cloud</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
-        .card-gradient { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+        body { font-family: 'Inter', sans-serif; background-color: #0b1120; color: #f1f5f9; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen font-sans">
-
-    <nav class="bg-slate-900 text-white p-4 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold tracking-tight">SETOR DOCUMENTAL <span class="text-blue-400">| Qualidade</span></h1>
-            <div class="text-sm opacity-75">Responsável: Vitor Martins</div>
-        </div>
-    </nav>
-
-    <main class="container mx-auto p-6">
-        
-        <div class="bg-white p-6 rounded-xl shadow-sm mb-8 border border-gray-200">
-            <h2 class="text-gray-700 font-semibold mb-4 flex items-center">
-                <span class="mr-2">📂</span> Importar Planilha de Qualidade (.xlsx)
-            </h2>
-            <input type="file" id="fileInput" accept=".xlsx, .xls" 
-                class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"/>
-        </div>
-
-        <div id="dashboard" class="hidden">
+<body>
+    <div class="flex h-screen">
+        <aside class="w-80 border-r border-slate-800 p-6 flex flex-col">
+            <h1 class="text-xl font-bold text-blue-400 mb-8 tracking-tighter italic">QUALITY.CLOUD</h1>
             
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div class="card-gradient p-5 rounded-2xl text-white shadow-md">
-                    <p class="text-sm opacity-80">Total Analisado</p>
-                    <h3 id="totalAnalisado" class="text-3xl font-bold">0</h3>
+            <label class="bg-blue-600 hover:bg-blue-500 p-3 rounded-xl text-center cursor-pointer font-bold text-sm transition-all mb-4">
+                ☁️ SUBIR PARA NUVEM
+                <input type="file" id="fileInput" class="hidden" accept=".xlsx, .csv">
+            </label>
+
+            <div id="analystList" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                <p class="text-slate-500 text-xs animate-pulse">Carregando dados da nuvem...</p>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-10">
+            <header class="flex justify-between items-center mb-10">
+                <div>
+                    <h2 class="text-xs font-black text-slate-500 uppercase tracking-widest">Dashboard Compartilhado</h2>
+                    <p class="text-sm text-slate-400">Todos os gestores visualizam estes dados</p>
                 </div>
-                <div class="bg-green-600 p-5 rounded-2xl text-white shadow-md">
-                    <p class="text-sm opacity-80">Aderência Média</p>
-                    <h3 id="mediaQualidade" class="text-3xl font-bold">0%</h3>
+                <button onclick="clearCloudData()" class="text-xs text-red-400 hover:underline uppercase font-bold">Zerar Banco Cloud</button>
+            </header>
+
+            <div id="stats" class="grid grid-cols-3 gap-6 mb-10">
+                <div class="glass p-6 rounded-3xl">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase">Total na Nuvem</p>
+                    <h3 id="statTotal" class="text-4xl font-black">0</h3>
                 </div>
-                <div class="bg-red-500 p-5 rounded-2xl text-white shadow-md">
-                    <p class="text-sm opacity-80">Erros Críticos</p>
-                    <h3 id="totalErrosCriticos" class="text-3xl font-bold">0</h3>
+                <div class="glass p-6 rounded-3xl" onclick="openHO()" style="cursor:pointer">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase">Elegíveis HO (Geral)</p>
+                    <h3 id="statHO" class="text-4xl font-black text-blue-400">0</h3>
                 </div>
-                <div class="bg-blue-600 p-5 rounded-2xl text-white shadow-md">
-                    <p class="text-sm opacity-80">Elegíveis Home Office</p>
-                    <h3 id="elegiveisHO" class="text-3xl font-bold">0</h3>
+                <div class="glass p-6 rounded-3xl border-l-4 border-indigo-500">
+                    <input type="date" id="filterDate" onchange="renderDetails()" class="bg-transparent text-white w-full outline-none text-xl font-bold">
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
-                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Ranking de Qualidade</h3>
-                    <div id="listaAnalistas" class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                        </div>
-                </div>
-
-                <div class="lg:col-span-2 space-y-6">
-                    <div id="detalheAnalista" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 min-h-[300px]">
-                        <h3 class="text-xl font-bold text-slate-800 mb-6">Selecione um analista para ver detalhes</h3>
-                        <div id="cardsContainers" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-                    </div>
-                </div>
+            <div id="details" class="hidden">
+                <h2 id="detName" class="text-3xl font-black mb-6"></h2>
+                <div id="logContainer" class="space-y-3"></div>
             </div>
-        </div>
-    </main>
+        </main>
+    </div>
 
     <script>
-        document.getElementById('fileInput').addEventListener('change', handleFile);
+        // SUBSTITUA PELO LINK DO SEU WORKER APÓS O DEPLOY
+        const API_URL = "https://SEU-WORKER.workers.dev"; 
 
-        function handleFile(e) {
-            const file = e.target.files[0];
+        let globalData = [];
+        let selectedAnalyst = null;
+
+        async function loadCloudData() {
+            const res = await fetch(`${API_URL}/get-data`);
+            globalData = await res.json();
+            processAndRender();
+        }
+
+        async function saveToCloud(data) {
+            await fetch(`${API_URL}/save-data`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+            loadCloudData();
+        }
+
+        async function clearCloudData() {
+            if(confirm("Isso apagará os dados para TODOS os usuários. Confirmar?")) {
+                await fetch(`${API_URL}/clear`, { method: "DELETE" });
+                location.reload();
+            }
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
             const reader = new FileReader();
-            reader.onload = function(evt) {
-                const data = evt.target.result;
-                const workbook = XLSX.read(data, { type: 'binary' });
-                const sheetName = workbook.SheetNames[0];
-                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: "A" });
-                processarDados(rows);
+            reader.onload = async (evt) => {
+                const workbook = XLSX.read(evt.target.result, { type: 'binary' });
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                const formatted = rows.map(r => ({
+                    data: r['Data'],
+                    nome: r['Operador 2'],
+                    adesao: r['Adesão'],
+                    status: r['Status Atendimento'],
+                    manifesto: r['Manifesto'] || '-',
+                    severidade: r['SEVERIDADE'] || 'NAO',
+                    produto: r['Produto'] || 'CNC'
+                }));
+                await saveToCloud(formatted);
+                alert("Dados sincronizados com a Nuvem!");
             };
-            reader.readAsBinaryString(file);
-        }
+            reader.readAsBinaryString(e.target.files[0]);
+        });
 
-        function processarDados(rows) {
-            // Remove cabeçalho se necessário (ajuste conforme sua planilha)
-            const dados = rows.slice(1); 
-            const analistas = {};
-
-            let totalCriticos = 0;
-
-            dados.forEach(row => {
-                const nomeAnalista = row.I; // Coluna I: Operador 2
-                const status = row.D;       // Coluna D: Status
-                const severidade = row.V;   // Coluna V: Severidade
-                const motivo = row.K;       // Coluna K: Manifesto
-
-                if(!nomeAnalista) return;
-
-                if(!analistas[nomeAnalista]) {
-                    analistas[nomeAnalista] = { total: 0, acertos: 0, erros: 0, criticos: 0, detalhes: [] };
-                }
-
-                analistas[nomeAnalista].total++;
-                if(status === "confere") {
-                    analistas[nomeAnalista].acertos++;
-                } else {
-                    analistas[nomeAnalista].erros++;
-                    analistas[nomeAnalista].detalhes.push({ motivo, severidade });
-                    if(severidade && severidade.toLowerCase().includes('alto')) {
-                        analistas[nomeAnalista].criticos++;
-                        totalCriticos++;
-                    }
-                }
+        function processAndRender() {
+            const list = document.getElementById('analystList');
+            list.innerHTML = '';
+            
+            const analysts = {};
+            globalData.forEach(d => {
+                if(!analysts[d.analista_nome]) analysts[d.analista_nome] = { name: d.analista_nome, total: 0, ok: 0 };
+                analysts[d.analista_nome].total++;
+                if(d.status.includes("CONFERE") && !d.status.includes("NÃO")) analysts[d.analista_nome].ok++;
             });
 
-            renderizarDashboard(analistas, totalCriticos);
-        }
-
-        function renderizarDashboard(analistas, totalCriticos) {
-            document.getElementById('dashboard').classList.remove('hidden');
-            const lista = document.getElementById('listaAnalistas');
-            lista.innerHTML = '';
-
-            let somaQualidade = 0;
-            let countAnalistas = 0;
-            let elegiveis = 0;
-
-            // Ordenar analistas por performance
-            const sorted = Object.entries(analistas).sort((a, b) => (b[1].acertos/b[1].total) - (a[1].acertos/a[1].total));
-
-            sorted.forEach(([nome, info], index) => {
-                const perc = ((info.acertos / info.total) * 100).toFixed(1);
-                somaQualidade += parseFloat(perc);
-                countAnalistas++;
-                
-                // Regra Home Office: 90% qualidade + Top 20 (aqui simplificado por posição no array)
-                const isElegivel = perc >= 90 && (index + 1) <= 20;
-                if(isElegivel) elegiveis++;
-
-                const item = document.createElement('div');
-                item.className = `p-3 rounded-lg border cursor-pointer transition hover:bg-gray-50 ${perc < 90 ? 'border-red-200 bg-red-50' : 'border-gray-200'}`;
-                item.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-sm">${nome}</span>
-                        <span class="font-bold ${perc < 90 ? 'text-red-600' : 'text-green-600'}">${perc}%</span>
-                    </div>
-                    <div class="text-[10px] uppercase text-gray-500 mt-1">Posição: ${index + 1}º | Erros: ${info.erros}</div>
-                `;
-                item.onclick = () => mostrarDetalhes(nome, info);
-                lista.appendChild(item);
-            });
-
-            document.getElementById('totalAnalisado').innerText = Object.values(analistas).reduce((a, b) => a + b.total, 0);
-            document.getElementById('mediaQualidade').innerText = (somaQualidade / countAnalistas).toFixed(1) + '%';
-            document.getElementById('totalErrosCriticos').innerText = totalCriticos;
-            document.getElementById('elegiveisHO').innerText = elegiveis;
-        }
-
-        function mostrarDetalhes(nome, info) {
-            const container = document.getElementById('detalheAnalista');
-            container.innerHTML = `
-                <div class="mb-6">
-                    <h3 class="text-2xl font-bold text-slate-800">${nome}</h3>
-                    <p class="text-gray-500">Resumo de apontamentos técnicos</p>
-                </div>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Acertos</p><p class="font-bold text-lg text-green-600">${info.acertos}</p></div>
-                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Erros</p><p class="font-bold text-lg text-red-600">${info.erros}</p></div>
-                    <div class="bg-gray-100 p-3 rounded-lg"><p class="text-xs">Aproveitamento</p><p class="font-bold text-lg">${((info.acertos/info.total)*100).toFixed(1)}%</p></div>
-                </div>
-                <div class="space-y-3">
-                    <h4 class="font-semibold text-sm text-gray-700">Histórico de Erros:</h4>
-                    ${info.detalhes.map(d => `
-                        <div class="p-3 bg-red-50 border-l-4 border-red-500 rounded text-sm">
-                            <div class="font-bold text-red-700 uppercase text-[10px]">${d.severidade || 'Não Definida'}</div>
-                            <div class="text-gray-700">${d.motivo}</div>
+            const sorted = Object.values(analysts).sort((a,b) => b.total - a.total);
+            sorted.forEach(a => {
+                const perc = (a.ok / a.total) * 100;
+                list.innerHTML += `
+                    <div onclick="showDetails('${a.name}')" class="p-4 glass rounded-2xl mb-2 cursor-pointer hover:border-blue-500 transition-all">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold">${a.name}</span>
+                            <span class="text-xs font-black ${perc >= 90 ? 'text-emerald-400' : 'text-red-400'}">${perc.toFixed(0)}%</span>
                         </div>
-                    `).join('') || '<p class="text-gray-400 italic">Nenhum erro registrado.</p>'}
-                </div>
-            `;
+                    </div>
+                `;
+            });
+
+            document.getElementById('statTotal').innerText = globalData.length;
+            // Cálculo do HO simplificado para o exemplo
+            document.getElementById('statHO').innerText = sorted.filter((a, i) => (a.ok/a.total) >= 0.9 && (i+1) <= 20).length;
         }
+
+        function showDetails(name) {
+            selectedAnalyst = name;
+            document.getElementById('details').classList.remove('hidden');
+            document.getElementById('detName').innerText = name;
+            renderDetails();
+        }
+
+        function renderDetails() {
+            if(!selectedAnalyst) return;
+            const container = document.getElementById('logContainer');
+            container.innerHTML = '';
+            const dateF = document.getElementById('filterDate').value;
+            
+            const logs = globalData.filter(d => 
+                d.analista_nome === selectedAnalyst && 
+                (!dateF || d.data_analise.includes(dateF)) &&
+                (!d.status.includes("CONFERE") || d.status.includes("NÃO"))
+            );
+
+            logs.forEach(l => {
+                container.innerHTML += `
+                    <div class="p-4 glass border-l-4 border-red-500 rounded-r-2xl">
+                        <p class="text-sm font-medium">${l.manifesto}</p>
+                        <div class="flex gap-4 mt-2 text-[10px] font-bold text-slate-500 uppercase">
+                            <span>Adesão: ${l.adesao}</span>
+                            <span>Data: ${l.data_analise}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        loadCloudData();
     </script>
 </body>
 </html>
