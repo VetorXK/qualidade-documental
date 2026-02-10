@@ -86,24 +86,48 @@
         }
 
         document.getElementById('fileInput').addEventListener('change', function(e) {
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
-                const workbook = XLSX.read(evt.target.result, { type: 'binary' });
-                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                const formatted = rows.map(r => ({
-                    data: r['Data'],
-                    nome: r['Operador 2'],
-                    adesao: r['Adesão'],
-                    status: r['Status Atendimento'],
-                    manifesto: r['Manifesto'] || '-',
-                    severidade: r['SEVERIDADE'] || 'NAO',
-                    produto: r['Produto'] || 'CNC'
-                }));
-                await saveToCloud(formatted);
-                alert("Dados sincronizados com a Nuvem!");
-            };
-            reader.readAsBinaryString(e.target.files[0]);
-        });
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        try {
+            const workbook = XLSX.read(evt.target.result, { type: 'binary' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(sheet);
+
+            const formatted = rawRows.map(r => {
+                // Limpa nomes de colunas (tira espaços extras)
+                let cleanRow = {};
+                Object.keys(r).forEach(key => {
+                    cleanRow[key.trim()] = r[key];
+                });
+
+                return {
+                    data: cleanRow['Data'],
+                    nome: cleanRow['Operador 2'],
+                    adesao: cleanRow['Adesão'],
+                    status: cleanRow['Status Atendimento'],
+                    manifesto: cleanRow['Manifesto'] || '-',
+                    severidade: cleanRow['SEVERIDADE'] || 'NAO',
+                    produto: cleanRow['Produto'] || cleanRow['Grupo'] || 'CNC'
+                };
+            });
+
+            // Filtra linhas vazias onde o analista não existe
+            const finalData = formatted.filter(f => f.nome);
+
+            if (finalData.length === 0) {
+                alert("Nenhum dado encontrado. Verifique se as colunas 'Operador 2' e 'Status Atendimento' existem na planilha.");
+                return;
+            }
+
+            await saveToCloud(finalData);
+            alert(`Sucesso! ${finalData.length} registros enviados para o banco Cloud.`);
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao processar arquivo: " + err.message);
+        }
+    };
+    reader.readAsBinaryString(e.target.files[0]);
+});
 
         function processAndRender() {
             const list = document.getElementById('analystList');
